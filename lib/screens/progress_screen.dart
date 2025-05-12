@@ -11,10 +11,124 @@ class ProgressScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Progress'),
+        title: const Text('Health & Progress'),
       ),
-      body: const Center(
-        child: Text('Progress Screen'),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Daily Health Tips',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 16),
+            _buildHealthTipCard(
+              icon: Icons.local_drink,
+              color: Colors.blue[100]!,
+              title: "Stay Hydrated",
+              description:
+                  "Drink at least 3-4 liters of water daily to maintain optimal body function and muscle recovery.",
+            ),
+            const SizedBox(height: 16),
+            _buildHealthTipCard(
+              icon: Icons.nightlight_round,
+              color: Colors.purple[100]!,
+              title: "Quality Sleep",
+              description:
+                  "Aim for 7-9 hours of sleep. Muscle recovery happens during deep sleep cycles.",
+            ),
+            const SizedBox(height: 16),
+            _buildHealthTipCard(
+              icon: Icons.restaurant,
+              color: Colors.green[100]!,
+              title: "Balanced Nutrition",
+              description:
+                  "Consume proteins, complex carbs, and healthy fats in every meal for sustained energy.",
+            ),
+            const SizedBox(height: 16),
+            _buildHealthTipCard(
+              icon: Icons.repeat,
+              color: Colors.orange[100]!,
+              title: "Consistency Matters",
+              description:
+                  "3 moderate workouts per week are better than 1 intense session followed by weeks of inactivity.",
+            ),
+            const SizedBox(height: 16),
+            _buildHealthTipCard(
+              icon: Icons.self_improvement,
+              color: Colors.red[100]!,
+              title: "Listen to Your Body",
+              description:
+                  "Rest when needed. Overtraining can lead to injuries and setbacks.",
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'Your Progress Summary',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 16),
+            ProgressSummaryTab(controller: Get.find<WorkoutController>()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHealthTipCard({
+    required IconData icon,
+    required Color color,
+    required String title,
+    required String description,
+  }) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, size: 28),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    description,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -31,7 +145,6 @@ class ProgressSummaryTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Obx(() {
-      // Calculate summary statistics
       final totalWorkouts = controller.workoutHistory.length;
 
       // Count workouts by type
@@ -41,9 +154,8 @@ class ProgressSummaryTab extends StatelessWidget {
         workoutCounts[type] = (workoutCounts[type] ?? 0) + 1;
       }
 
-      // Calculate streak (consecutive days with workouts)
-      int currentStreak = 0;
-      // (Streak calculation logic would go here)
+      // Calculate streak
+      int currentStreak = calculateStreak();
 
       return SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
@@ -65,7 +177,7 @@ class ProgressSummaryTab extends StatelessWidget {
                 Expanded(
                   child: _buildStatCard(
                     'Current Streak',
-                    '$currentStreak days',
+                    '$currentStreak ${currentStreak == 1 ? 'day' : 'days'}',
                     Icons.local_fire_department,
                     Colors.orange,
                   ),
@@ -126,6 +238,59 @@ class ProgressSummaryTab extends StatelessWidget {
         ),
       );
     });
+  }
+
+  int calculateStreak() {
+    if (controller.workoutHistory.isEmpty) return 0;
+
+    // Sort workouts by date (newest first)
+    final sortedWorkouts = List.of(controller.workoutHistory)
+      ..sort((a, b) => b.date.compareTo(a.date));
+
+    int streak = 0;
+    DateTime currentDate = DateTime.now();
+    final today =
+        DateTime(currentDate.year, currentDate.month, currentDate.day);
+
+    // Check if today has workout
+    final lastWorkoutDate = DateTime(sortedWorkouts.first.date.year,
+        sortedWorkouts.first.date.month, sortedWorkouts.first.date.day);
+
+    if (lastWorkoutDate == today) {
+      streak++;
+      currentDate = currentDate.subtract(const Duration(days: 1));
+    } else {
+      // No workout today - streak is 0
+      return 0;
+    }
+
+    for (var workout in sortedWorkouts.skip(1)) {
+      final workoutDate =
+          DateTime(workout.date.year, workout.date.month, workout.date.day);
+
+      // Skip future dates (if any)
+      if (workoutDate.isAfter(today)) continue;
+
+      // Check consecutive days
+      while (true) {
+        final previousDate =
+            DateTime(currentDate.year, currentDate.month, currentDate.day);
+
+        if (workoutDate == previousDate) {
+          streak++;
+          currentDate = currentDate.subtract(const Duration(days: 1));
+          break;
+        } else if (workoutDate.isBefore(previousDate)) {
+          // Found a gap - streak ends
+          return streak;
+        } else {
+          // Move to next day
+          currentDate = currentDate.subtract(const Duration(days: 1));
+        }
+      }
+    }
+
+    return streak;
   }
 
   Widget _buildStatCard(
