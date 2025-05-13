@@ -5,6 +5,7 @@ import '../widgets/dashboard/today_workout_card.dart';
 import '../widgets/dashboard/weekly_schedule.dart';
 import '../widgets/dialogs/change_workout_dialog.dart';
 import '../widgets/dialogs/edit_day_workout_dialog.dart';
+import 'calorie_tracker.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
@@ -35,6 +36,18 @@ class DashboardScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             TodayWorkoutCard(controller: controller),
+            // بعد TodayWorkoutCard مباشرة
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.local_fire_department),
+              label: const Text('Calorie Tracker'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange[100],
+                foregroundColor: Colors.orange[800],
+                minimumSize: const Size(double.infinity, 50),
+              ),
+              onPressed: () => Get.to(() => const CalorieTrackerScreen()),
+            ),
             const SizedBox(height: 24),
             const Text(
               'Weekly Workout Schedule',
