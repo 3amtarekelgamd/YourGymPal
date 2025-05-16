@@ -1,8 +1,11 @@
 import 'package:get/get.dart';
 import 'package:flutter/material.dart';
+import '../models/exercise.dart';
 import '../controllers/templates_controller.dart';
 import '../controllers/workout_controller.dart';
 import '../models/workout_template.dart';
+import 'package:get_storage/get_storage.dart';
+import '../widgets/status/status_widgets.dart';
 
 /// Controller for the workouts screen
 class WorkoutsController extends GetxController {
@@ -43,6 +46,12 @@ class WorkoutsController extends GetxController {
     isLoading.value = true;
 
     try {
+      // Safety check for empty templates list
+      if (_templatesController.templates.isEmpty) {
+        filteredTemplates.clear();
+        return;
+      }
+      
       if (searchTerm.value.isEmpty) {
         // Just filter out Rest workouts
         filteredTemplates.assignAll(_templatesController.templates
@@ -50,7 +59,7 @@ class WorkoutsController extends GetxController {
             .toList());
       } else {
         // Filter by search term and not Rest
-        final term = searchTerm.value.toLowerCase();
+        final term = searchTerm.value.toLowerCase().trim();
         filteredTemplates.assignAll(_templatesController.templates
             .where((template) =>
                 template.type.toLowerCase() != 'rest' &&
@@ -60,6 +69,17 @@ class WorkoutsController extends GetxController {
                     template.exercises
                         .any((e) => e.name.toLowerCase().contains(term))))
             .toList());
+      }
+    } catch (e) {
+      debugPrint('Error updating filtered templates: $e');
+      // In case of error, show all templates except Rest
+      try {
+        filteredTemplates.assignAll(_templatesController.templates
+            .where((template) => template.type.toLowerCase() != 'rest')
+            .toList());
+      } catch (fallbackError) {
+        debugPrint('Failed to apply fallback filter: $fallbackError');
+        filteredTemplates.clear();
       }
     } finally {
       isLoading.value = false;
@@ -79,6 +99,9 @@ class WorkoutsController extends GetxController {
 
   /// Start a template workout
   void startWorkout(String templateId) {
+    debugPrint('WorkoutsController: Starting workout with templateId: $templateId');
+    
+    // Let the templatesController handle all the setup and navigation
     _templatesController.startTemplateWorkout(templateId);
   }
 
@@ -115,5 +138,45 @@ class WorkoutsController extends GetxController {
   /// Clear search
   void clearSearch() {
     searchTerm.value = '';
+  }
+
+  /// Start a template workout directly
+  void directStartWorkout(String templateId) {
+    debugPrint('WorkoutsController: Directly starting workout with templateId: $templateId');
+    
+    try {
+      // Find template
+      final template = _templatesController.templates.firstWhereOrNull((t) => t.id == templateId);
+      if (template == null) {
+        debugPrint('WorkoutsController: Template not found for directStartWorkout');
+        StatusToast.showError('Workout not found');
+        return;
+      }
+      
+      // Ensure template has exercises
+      if (template.exercises.isEmpty) {
+        debugPrint('WorkoutsController: Template has no exercises');
+        StatusToast.showError('This workout has no exercises');
+        return;
+      }
+      
+      // Reset any existing workout state and use the more robust startTemplateWorkout
+      // method in WorkoutController which handles all the setup and navigation
+      debugPrint('WorkoutsController: Starting template workout via WorkoutController');
+      final workoutController = Get.find<WorkoutController>();
+      workoutController.startTemplateWorkout(template);
+      
+      // If navigation failed for some reason, try direct navigation after a delay
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (workoutController.isWorkoutActive.value && 
+            !Get.currentRoute.contains('active-workout')) {
+          debugPrint('WorkoutsController: Backup navigation to active-workout');
+          Get.toNamed('/active-workout');
+        }
+      });
+    } catch (e) {
+      debugPrint('WorkoutsController: Error in directStartWorkout: $e');
+      StatusToast.showError('Failed to start workout: $e');
+    }
   }
 }

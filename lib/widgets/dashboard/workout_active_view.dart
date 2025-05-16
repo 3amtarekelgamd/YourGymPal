@@ -48,9 +48,22 @@ class WorkoutActiveView extends StatelessWidget {
                         : () {
                             // Disable button immediately on click
                             isButtonDisabled.value = true;
+                            
+                            // Debug information
+                            debugPrint('START WORKOUT BUTTON PRESSED');
+                            debugPrint('Workout Name: $workoutName');
+                            debugPrint('Exercises: ${exercises.length}');
+                            debugPrint('Has Incomplete Workout: $hasIncompletedWorkout');
 
-                            // Call the action
-                            onStart();
+                            // Call the action and let the controller handle navigation
+                            try {
+                              onStart();
+                              debugPrint('START WORKOUT CALLBACK CALLED SUCCESSFULLY');
+                            } catch (e) {
+                              debugPrint('ERROR CALLING START WORKOUT: $e');
+                              // Re-enable button on error
+                              isButtonDisabled.value = false;
+                            }
                           },
                     icon: isButtonDisabled.value
                         ? const SizedBox(

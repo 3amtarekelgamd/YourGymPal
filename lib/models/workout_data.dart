@@ -1,4 +1,8 @@
 import 'exercise.dart';
+import 'package:get/get.dart';
+import 'package:flutter/foundation.dart';
+import '../controllers/templates_controller.dart';
+import 'workout_template.dart';
 
 /// Data for predefined workout types
 class WorkoutData {
@@ -8,7 +12,11 @@ class WorkoutData {
 
   // Get exercises for a specific workout type
   static List<Exercise> getExercisesForType(String workoutType) {
-    switch (workoutType.toLowerCase()) {
+    // Convert to lowercase for case-insensitive comparison
+    final lowercaseType = workoutType.toLowerCase();
+    
+    // Handle standard workout types first
+    switch (lowercaseType) {
       case 'push':
         return [
           Exercise(
@@ -120,13 +128,88 @@ class WorkoutData {
           ),
         ];
 
+      case 'rest':
+        // Return empty list for Rest type
+        return [];
+      
       case 'custom':
-        // Return empty list for custom - user will add their own exercises
-        return [];
-
+        // For the specific "Custom" string, try to use templates first,
+        // but provide default exercises as a fallback
+        return _generateDefaultExercisesForCustomWorkout("Custom");
+        
       default:
-        return [];
+        // For any other workout type (custom workouts), look for templates first
+        try {
+          // Try to find a template with this name
+          final templatesController = Get.find<TemplatesController>();
+          
+          // Look for a template with matching name or type
+          final template = templatesController.templates.firstWhereOrNull(
+            (t) => t.name.toLowerCase() == workoutType.toLowerCase() || 
+                   t.type.toLowerCase() == workoutType.toLowerCase()
+          );
+          
+          if (template != null && template.exercises.isNotEmpty) {
+            // Convert template exercises to regular exercises
+            return template.exercises.map((te) => 
+              Exercise(
+                name: te.name,
+                workoutType: template.type,
+                primaryMuscle: template.type,
+                secondaryMuscles: [],
+                equipment: 'Unknown',
+                targetSets: te.targetSets > 0 ? te.targetSets : 3,
+                targetReps: te.targetReps > 0 ? te.targetReps : 10,
+                notes: te.notes,
+              )
+            ).toList();
+          }
+        } catch (e) {
+          // If there's an error getting templates, log it and use defaults
+          debugPrint('Error getting exercises from template: $e');
+        }
+        
+        // Fallback to default exercises if template not found or empty
+        return _generateDefaultExercisesForCustomWorkout(workoutType);
     }
+  }
+
+  // Helper method to generate default exercises for any custom workout type
+  static List<Exercise> _generateDefaultExercisesForCustomWorkout(String workoutType) {
+    // Create a properly capitalized version of the workout type for display
+    final displayType = workoutType.isNotEmpty 
+        ? workoutType[0].toUpperCase() + workoutType.substring(1)
+        : workoutType;
+        
+    return [
+      Exercise(
+        name: 'Bench Press',
+        workoutType: displayType,
+        primaryMuscle: 'Chest',
+        secondaryMuscles: ['Triceps', 'Shoulders'],
+        equipment: 'Barbell',
+        targetSets: 3,
+        targetReps: 10,
+      ),
+      Exercise(
+        name: 'Squats',
+        workoutType: displayType,
+        primaryMuscle: 'Legs',
+        secondaryMuscles: ['Glutes', 'Hamstrings'],
+        equipment: 'Barbell',
+        targetSets: 3,
+        targetReps: 10,
+      ),
+      Exercise(
+        name: 'Pull-ups',
+        workoutType: displayType,
+        primaryMuscle: 'Back',
+        secondaryMuscles: ['Biceps'],
+        equipment: 'Bodyweight',
+        targetSets: 3,
+        targetReps: 8,
+      ),
+    ];
   }
 
   // Method to create a custom exercise
@@ -156,7 +239,9 @@ class WorkoutData {
 
   // Get simple exercise descriptions for a specific workout type
   static List<String> getExerciseDescriptionsForType(String workoutType) {
-    switch (workoutType.toLowerCase()) {
+    final lowercaseType = workoutType.toLowerCase();
+    
+    switch (lowercaseType) {
       case 'push':
         return [
           'Bench Press: 4 sets x 8 reps',
@@ -176,9 +261,15 @@ class WorkoutData {
           'Calf Raises: 3 sets x 15 reps',
         ];
       case 'custom':
+      case 'rest':
         return ['Custom workout - add your own exercises'];
       default:
-        return [];
+        // For any custom workout, return default descriptions
+        return [
+          'Bench Press: 3 sets x 10 reps',
+          'Squats: 3 sets x 10 reps',
+          'Pull-ups: 3 sets x 8 reps',
+        ];
     }
   }
 }

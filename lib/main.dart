@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:device_preview/device_preview.dart';
+import 'package:get_storage/get_storage.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/workouts_screen.dart';
 import 'screens/progress_screen.dart';
@@ -13,17 +13,59 @@ import 'services/image_service.dart';
 import 'services/sound_service.dart';
 import 'bindings/initial_bindings.dart';
 
+// Add a route observer for debugging
+class NavigationObserver extends NavigatorObserver {
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    debugPrint('NAVIGATION: Pushed route: ${route.settings.name}');
+    super.didPush(route, previousRoute);
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    debugPrint('NAVIGATION: Popped route: ${route.settings.name}');
+    super.didPop(route, previousRoute);
+  }
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    debugPrint('NAVIGATION: Removed route: ${route.settings.name}');
+    super.didRemove(route, previousRoute);
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    debugPrint('NAVIGATION: Replaced route: ${oldRoute?.settings.name} -> ${newRoute?.settings.name}');
+    super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
+  }
+}
+
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  try {
+    WidgetsFlutterBinding.ensureInitialized();
+    
+    // Initialize GetStorage before the app starts
+    await GetStorage.init();
+    
+    await initServices();
 
-  await initServices();
-
-  runApp(
-    DevicePreview(
-      enabled: true, // Keep device preview on at all times
-      builder: (context) => const GymApp(),
-    ),
-  );
+    runApp(const GymApp());
+  } catch (e) {
+    debugPrint('Error initializing app: $e');
+    // Show a user-friendly error screen
+    runApp(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: Text(
+              'Failed to initialize app. Please restart.',
+              style: TextStyle(color: Colors.red),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// Initialize all services before the app starts
@@ -47,6 +89,7 @@ class GymApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GetMaterialApp(
+      debugShowCheckedModeBanner: false,
       title: 'Your Gym Pal',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
@@ -60,6 +103,7 @@ class GymApp extends StatelessWidget {
       ),
       themeMode: ThemeMode.system, // Initial theme mode
       initialBinding: InitialBindings(),
+      navigatorObservers: [NavigationObserver()], // Add our navigation observer
       getPages: [
         GetPage(
           name: '/',
@@ -96,8 +140,8 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Initialize and inject the home controller
-    final HomeController controller = Get.put(HomeController());
+    // Get the home controller using the tag specified in InitialBindings
+    final HomeController controller = Get.find<HomeController>(tag: 'home');
 
     final List<Widget> screens = [
       const DashboardScreen(),
@@ -107,31 +151,39 @@ class HomeScreen extends StatelessWidget {
     ];
 
     return Scaffold(
-      body: Obx(() => screens[controller.tabIndex.value]),
+      body: Obx(() {
+        // Add safety check for tabIndex to prevent index out of range errors
+        final index = controller.tabIndex.value.clamp(0, screens.length - 1);
+        return screens[index];
+      }),
       bottomNavigationBar: Obx(
-        () => BottomNavigationBar(
-          type: BottomNavigationBarType.fixed,
-          currentIndex: controller.tabIndex.value,
-          onTap: (index) => controller.changeTab(index),
-          items: const [
-            BottomNavigationBarItem(
-              icon: Icon(Icons.dashboard),
-              label: 'Dashboard',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.fitness_center),
-              label: 'Workouts',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.show_chart),
-              label: 'Progress',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.person),
-              label: 'Profile',
-            ),
-          ],
-        ),
+        () {
+          // Add safety check for tabIndex to prevent index out of range errors
+          final index = controller.tabIndex.value.clamp(0, screens.length - 1);
+          return BottomNavigationBar(
+            type: BottomNavigationBarType.fixed,
+            currentIndex: index,
+            onTap: (index) => controller.changeTab(index),
+            items: const [
+              BottomNavigationBarItem(
+                icon: Icon(Icons.dashboard),
+                label: 'Dashboard',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.fitness_center),
+                label: 'Workouts',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.show_chart),
+                label: 'Progress',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.person),
+                label: 'Profile',
+              ),
+            ],
+          );
+        },
       ),
     );
   }

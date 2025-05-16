@@ -1,7 +1,6 @@
 // ignore_for_file: avoid_print
 
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 import 'package:flutter/material.dart';
 import '../models/exercise.dart';
@@ -14,8 +13,22 @@ import 'package:vibration/vibration.dart';
 import '../controllers/settings_controller.dart';
 import '../services/sound_service.dart';
 import '../controllers/templates_controller.dart';
+import 'package:get_storage/get_storage.dart';
+import '../screens/active_workout_screen.dart';
 
 class WorkoutController extends GetxController {
+  // Storage keys
+  static const String kWorkoutSchedule = 'workout_schedule';
+  static const String kWorkoutHistory = 'workout_history';
+  static const String kHasIncompleteWorkout = 'has_incomplete_workout';
+  static const String kLastExerciseIndex = 'last_exercise_index';
+  static const String kSavedCompletedSets = 'saved_completed_sets';
+  static const String kCurrentWorkout = 'current_workout';
+  static const String kWorkoutStartTime = 'workout_start_time';
+
+  // GetStorage instance
+  final GetStorage _storage = GetStorage();
+
   // Observable variables
   final RxString currentDay = ''.obs;
   final RxString currentWorkout = ''.obs;
@@ -48,6 +61,17 @@ class WorkoutController extends GetxController {
     'Sunday': 'Rest',
   }.obs;
 
+  // Default workout schedule to restore from
+  final Map<String, String> defaultWorkoutSchedule = {
+    'Monday': 'Pull',
+    'Tuesday': 'Legs',
+    'Wednesday': 'Rest',
+    'Thursday': 'Push',
+    'Friday': 'Pull',
+    'Saturday': 'Legs',
+    'Sunday': 'Rest',
+  };
+
   // Workout start time (for duration tracking)
   DateTime? workoutStartTime;
 
@@ -70,19 +94,137 @@ class WorkoutController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    
+    // Load data from GetStorage
+    _loadDataFromStorage();
+    
     updateTodaysWorkout();
 
     // Check if we have a workout active on startup
     ever(isWorkoutActive, (_) {
-      if (kDebugMode) {
-        debugPrint('Workout active changed to: $isWorkoutActive');
-      }
+      debugPrint('Workout active changed to: $isWorkoutActive');
     });
 
     // Debug print when incomplete workout status changes
     ever(hasIncompleteWorkout, (value) {
       debugPrint('Has incomplete workout changed to: $value');
+      // Save the state to storage when it changes
+      _storage.write(kHasIncompleteWorkout, value);
     });
+    
+    // Save workout schedule when it changes
+    ever(workoutSchedule, (_) {
+      _saveWorkoutSchedule();
+    });
+    
+    // Save workout history when it changes
+    ever(workoutHistory, (_) {
+      _saveWorkoutHistory();
+    });
+    
+    // Save completed sets when they change
+    ever(savedCompletedSets, (_) {
+      _storage.write(kSavedCompletedSets, savedCompletedSets.map((key, value) => 
+        MapEntry(key.toString(), value)));
+    });
+    
+    // Save last exercise index when it changes
+    ever(lastExerciseIndex, (value) {
+      _storage.write(kLastExerciseIndex, value);
+    });
+    
+    // Save current workout when it changes
+    ever(currentWorkout, (value) {
+      _storage.write(kCurrentWorkout, value);
+    });
+  }
+  
+  // Load data from GetStorage
+  void _loadDataFromStorage() {
+    try {
+      // Load workout schedule
+      final savedSchedule = _storage.read<Map<dynamic, dynamic>>(kWorkoutSchedule);
+      if (savedSchedule != null) {
+        final Map<String, String> typedSchedule = {};
+        savedSchedule.forEach((key, value) {
+          if (key is String && value is String) {
+            typedSchedule[key] = value;
+          }
+        });
+        if (typedSchedule.isNotEmpty) {
+          workoutSchedule.assignAll(typedSchedule);
+          debugPrint('Loaded workout schedule from storage');
+        }
+      }
+      
+      // Load workout history
+      final savedHistory = _storage.read<List<dynamic>>(kWorkoutHistory);
+      if (savedHistory != null) {
+        final loadedHistory = savedHistory
+            .map((item) => WorkoutHistoryEntry.fromJson(item))
+            .toList();
+        workoutHistory.assignAll(loadedHistory);
+        debugPrint('Loaded ${loadedHistory.length} workout history entries');
+      }
+      
+      // Load incomplete workout data
+      hasIncompleteWorkout.value = _storage.read<bool>(kHasIncompleteWorkout) ?? false;
+      lastExerciseIndex.value = _storage.read<int>(kLastExerciseIndex) ?? 0;
+      
+      final savedSets = _storage.read<Map<dynamic, dynamic>>(kSavedCompletedSets);
+      if (savedSets != null) {
+        final Map<int, int> typedSets = {};
+        savedSets.forEach((key, value) {
+          if (value is int) {
+            typedSets[int.tryParse(key.toString()) ?? 0] = value;
+          }
+        });
+        savedCompletedSets.assignAll(typedSets);
+        debugPrint('Loaded saved sets: $typedSets');
+      }
+      
+      // Load current workout if available
+      final savedWorkout = _storage.read<String>(kCurrentWorkout);
+      if (savedWorkout != null && savedWorkout.isNotEmpty) {
+        currentWorkout.value = savedWorkout;
+        debugPrint('Loaded current workout: $savedWorkout');
+      }
+      
+      // Load workout start time if available
+      final savedStartTime = _storage.read<String>(kWorkoutStartTime);
+      if (savedStartTime != null) {
+        try {
+          workoutStartTime = DateTime.parse(savedStartTime);
+          debugPrint('Loaded workout start time: $workoutStartTime');
+        } catch (e) {
+          debugPrint('Error parsing workout start time: $e');
+          workoutStartTime = null;
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading data from storage: $e');
+    }
+  }
+  
+  // Save workout schedule to storage
+  void _saveWorkoutSchedule() {
+    try {
+      _storage.write(kWorkoutSchedule, workoutSchedule);
+      debugPrint('Saved workout schedule to storage');
+    } catch (e) {
+      debugPrint('Error saving workout schedule: $e');
+    }
+  }
+  
+  // Save workout history to storage
+  void _saveWorkoutHistory() {
+    try {
+      final historyJson = workoutHistory.map((entry) => entry.toJson()).toList();
+      _storage.write(kWorkoutHistory, historyJson);
+      debugPrint('Saved workout history to storage');
+    } catch (e) {
+      debugPrint('Error saving workout history: $e');
+    }
   }
 
   // Anti-spam helper: Check if an action can be performed
@@ -107,8 +249,20 @@ class WorkoutController extends GetxController {
   void updateTodaysWorkout() {
     if (!_canPerformAction('updateTodaysWorkout')) return;
 
-    currentDay.value = getDayName(DateTime.now());
+    final DateTime now = DateTime.now();
+    currentDay.value = getDayName(now);
+    final oldWorkout = currentWorkout.value;
     currentWorkout.value = workoutSchedule[currentDay.value] ?? 'Rest';
+    
+    debugPrint('WorkoutController.updateTodaysWorkout: Current date: ${now.toString()}');
+    debugPrint('WorkoutController.updateTodaysWorkout: Current day: ${currentDay.value}');
+    debugPrint('WorkoutController.updateTodaysWorkout: Current workout: ${currentWorkout.value} (was $oldWorkout)');
+    
+    // Check each day in schedule
+    workoutSchedule.forEach((day, workout) {
+      debugPrint('WorkoutController.updateTodaysWorkout: Schedule - $day: $workout');
+    });
+    
     isRestDay.value = currentWorkout.value.toLowerCase() == 'rest';
 
     // Reset status first
@@ -124,6 +278,21 @@ class WorkoutController extends GetxController {
           isTodayWorkoutSkipped.value = true;
         }
       }
+    }
+    
+    // Pre-check if we have exercises for the current workout
+    final preCheckExercises = WorkoutData.getExercisesForType(currentWorkout.value);
+    if (preCheckExercises.isEmpty) {
+      debugPrint('WorkoutController.updateTodaysWorkout: WARNING - No exercises found for ${currentWorkout.value}');
+      
+      // Try with lowercase to fix case sensitivity issues
+      final normalizedWorkoutType = currentWorkout.value.toLowerCase();
+      final fallbackExercises = WorkoutData.getExercisesForType(normalizedWorkoutType);
+      if (fallbackExercises.isNotEmpty) {
+        debugPrint('WorkoutController.updateTodaysWorkout: But found ${fallbackExercises.length} exercises with normalized type');
+      }
+    } else {
+      debugPrint('WorkoutController.updateTodaysWorkout: Found ${preCheckExercises.length} exercises for ${currentWorkout.value}');
     }
   }
 
@@ -174,45 +343,217 @@ class WorkoutController extends GetxController {
     return exercises.map((e) => e.name).toList();
   }
 
+  // Helper method for consistent navigation to active workout
+  void _navigateToActiveWorkout() {
+    try {
+      // Make sure isWorkoutActive is true before navigating
+      if (!isWorkoutActive.value) {
+        debugPrint('WorkoutController: Cannot navigate to active workout because isWorkoutActive is false');
+        return;
+      }
+      
+      if (activeExercises.isEmpty) {
+        debugPrint('WorkoutController: Cannot navigate to active workout because activeExercises is empty');
+        StatusToast.showError('No exercises available for this workout');
+        isWorkoutActive.value = false;
+        return;
+      }
+      
+      // Check if we're already on the active workout screen
+      if (Get.currentRoute == '/active-workout') {
+        debugPrint('WorkoutController: Already on active workout screen');
+        return;
+      }
+      
+      debugPrint('WorkoutController: Navigating to active workout screen');
+      
+      // Capture current route for better debugging
+      final String currentRoute = Get.currentRoute;
+      debugPrint('WorkoutController: Current route before navigation: $currentRoute');
+      
+      // Try different navigation approaches based on current context
+      if (currentRoute == '/dashboard' || currentRoute == '/') {
+        // If on dashboard, use offAndToNamed for smoother navigation
+        debugPrint('WorkoutController: Using offAndToNamed for navigation from dashboard');
+        Get.offAndToNamed('/active-workout');
+      } else {
+        // For other routes, try regular navigation
+        debugPrint('WorkoutController: Using toNamed for navigation from non-dashboard');
+        Get.toNamed('/active-workout');
+      }
+      
+      // Add a fallback check after short delay
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (isWorkoutActive.value && Get.currentRoute != '/active-workout') {
+          debugPrint('WorkoutController: Navigation may have failed, using fallback navigation');
+          Get.offAll(() => const ActiveWorkoutScreen());
+        }
+      });
+    } catch (e) {
+      debugPrint('WorkoutController: Exception in _navigateToActiveWorkout: $e');
+      StatusToast.showError('Navigation error: $e');
+      _handleNavigationError();
+    }
+  }
+  
+  // Handle navigation errors with a fallback strategy
+  void _handleNavigationError() {
+    // Try using a different navigation approach as fallback
+    try {
+      debugPrint('WorkoutController: Trying fallback navigation');
+      
+      // First ensure we return to dashboard
+      Get.offAllNamed('/dashboard');
+      
+      // Then after a delay try to go to active workout
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (isWorkoutActive.value && activeExercises.isNotEmpty) {
+          debugPrint('WorkoutController: Fallback navigation to active workout');
+          Get.toNamed('/active-workout');
+          StatusToast.showInfo('Starting workout...');
+        }
+      });
+    } catch (e) {
+      debugPrint('WorkoutController: Fallback navigation also failed: $e');
+      StatusToast.showError('Could not open workout screen. Please try again.');
+      isWorkoutActive.value = false;
+    }
+  }
+
   // Start a workout
   void startWorkout() {
     // Check if we can perform this action
-    if (!_canPerformAction('startWorkout')) return;
+    if (!_canPerformAction('startWorkout')) {
+      debugPrint('WorkoutController: Cannot start workout due to anti-spam protection');
+      StatusToast.showInfo('Please wait a moment before trying again');
+      return;
+    }
 
     isProcessingAction.value = true;
     debugPrint(
-        'Starting workout. Has incomplete workout: ${hasIncompleteWorkout.value}');
+        'WorkoutController.startWorkout(): Starting workout. Current workout: ${currentWorkout.value}, Day: ${currentDay.value}');
 
     try {
       // Check if we have a saved workout to continue
       if (hasIncompleteWorkout.value) {
+        debugPrint('WorkoutController.startWorkout(): Continuing incomplete workout');
         _continueWorkoutInternal();
         return;
       }
 
-      // Check if current workout is from a template
-      final TemplatesController templatesController =
-          Get.find<TemplatesController>();
-      final template =
-          templatesController.findTemplateByType(currentWorkout.value);
+      // Fix for case insensitivity issues
+      final normalizedWorkoutType = currentWorkout.value.toLowerCase();
+      debugPrint('WorkoutController.startWorkout(): Normalized workout type: $normalizedWorkoutType');
 
-      // If the current workout is a template type and not a default type
-      if (template != null &&
-          !['Push', 'Pull', 'Legs', 'Rest', 'Custom']
-              .contains(currentWorkout.value)) {
-        // Start template workout
-        templatesController.startTemplateWorkout(template.id);
+      // Check if current workout is from a template - improved template matching
+      final TemplatesController templatesController = Get.find<TemplatesController>();
+      
+      // First try exact match by name
+      var template = templatesController.templates.firstWhereOrNull(
+        (t) => t.name.toLowerCase() == currentWorkout.value.toLowerCase()
+      );
+      
+      // If no match by name, try match by type
+      if (template == null) {
+        template = templatesController.templates.firstWhereOrNull(
+          (t) => t.type.toLowerCase() == currentWorkout.value.toLowerCase()
+        );
+      }
+      
+      // Log whether we found a template
+      if (template != null) {
+        debugPrint('WorkoutController.startWorkout(): Found matching template: ${template.name}');
+      } else {
+        debugPrint('WorkoutController.startWorkout(): No matching template found for: ${currentWorkout.value}');
+      }
+
+      // If the current workout is a template type or matches a template name
+      if (template != null) {
+        try {
+          // Start template workout with detailed error trapping
+          debugPrint('WorkoutController.startWorkout(): Attempting to start template workout with ID: ${template.id}');
+          bool success = templatesController.startTemplateWorkout(template.id);
+          debugPrint('WorkoutController.startWorkout(): Template workout start result: $success');
+          
+          // If template start succeeded, return early (success path)
+          if (success) {
+            return;
+          }
+        } catch (e) {
+          // Catch any errors in the template startup process
+          debugPrint('WorkoutController.startWorkout(): Error starting template workout: $e');
+        }
+        
+        // If we get here, template start failed - log it and continue with default workout
+        debugPrint('WorkoutController.startWorkout(): Template start failed, falling back to default workout');
+      }
+      
+      // If 'Custom' is set but didn't match any template, return with message
+      if (normalizedWorkoutType == 'custom') {
+        debugPrint('WorkoutController.startWorkout(): Custom workout with no template');
+        StatusToast.showError('No exercises found for this custom workout');
+        isProcessingAction.value = false;
         return;
       }
 
       // Start a new workout with default exercises
+      debugPrint('WorkoutController.startWorkout(): Starting default workout for type: ${currentWorkout.value}');
+      
       // Clear previous active status
       isWorkoutActive.value = false;
       activeExercises.clear();
 
       // Set new exercise list based on workout type
       final exercises = WorkoutData.getExercisesForType(currentWorkout.value);
-      activeExercises.assignAll(exercises);
+      
+      debugPrint('WorkoutController.startWorkout(): Found ${exercises.length} exercises for ${currentWorkout.value}');
+      
+      if (exercises.isEmpty) {
+        debugPrint('WorkoutController.startWorkout(): No exercises found for type: ${currentWorkout.value}');
+        // Try with normalized workout type as fallback
+        final fallbackExercises = WorkoutData.getExercisesForType(normalizedWorkoutType);
+        
+        if (fallbackExercises.isEmpty) {
+          // Allow custom workouts to start even with no exercises
+          debugPrint('WorkoutController.startWorkout(): Starting empty custom workout: ${currentWorkout.value}');
+          
+          // Set workout as active anyway
+          isWorkoutActive.value = true;
+          
+          // Reset completed/skipped status
+          _silentResetTodaysWorkoutStatus();
+          
+          // Record start time
+          _recordWorkoutStartTime();
+          
+          // Navigate to active workout screen
+          _navigateToActiveWorkout();
+          
+          // Add direct fallback navigation after a short delay
+          Future.delayed(const Duration(milliseconds: 800), () {
+            if (isWorkoutActive.value && 
+                Get.currentRoute != '/active-workout') {
+              debugPrint('WorkoutController.startWorkout(): Main navigation may have failed, using direct fallback');
+              // Get.offAll() is more reliable than named routes when navigation is stuck
+              Get.offAll(() => const ActiveWorkoutScreen());
+            }
+          });
+          
+          // Show toast AFTER navigation
+          Future.delayed(const Duration(milliseconds: 300), () {
+            StatusToast.showInfo('Starting ${currentWorkout.value} workout');
+          });
+          
+          return;
+        } else {
+          debugPrint('WorkoutController.startWorkout(): Found ${fallbackExercises.length} exercises with normalized type');
+          activeExercises.assignAll(fallbackExercises);
+        }
+      } else {
+        activeExercises.assignAll(exercises);
+      }
+      
+      debugPrint('WorkoutController.startWorkout(): Loaded ${activeExercises.length} exercises');
 
       // Reset progress
       activeExerciseIndex.value = 0;
@@ -224,15 +565,30 @@ class WorkoutController extends GetxController {
 
       // Set workout as active
       isWorkoutActive.value = true;
+      debugPrint('WorkoutController.startWorkout(): Set workout active to true');
 
       // Reset completed/skipped status (without showing toast)
       _silentResetTodaysWorkoutStatus();
 
-      // Record start time
-      workoutStartTime = DateTime.now();
+      // Record start time with storage
+      _recordWorkoutStartTime();
 
-      // Use the correct route name
-      Get.toNamed('/active-workout');
+      // Debug info before navigation
+      debugPrint('WorkoutController.startWorkout(): Active workout: ${isWorkoutActive.value}, Exercises: ${activeExercises.length}');
+      
+      // Use the navigation helper
+      _navigateToActiveWorkout();
+
+      // Add direct fallback navigation after a short delay in case main navigation fails
+      Future.delayed(const Duration(milliseconds: 800), () {
+        if (isWorkoutActive.value && 
+            activeExercises.isNotEmpty &&
+            Get.currentRoute != '/active-workout') {
+          debugPrint('WorkoutController.startWorkout(): Main navigation may have failed, using direct fallback');
+          // Get.offAll() is more reliable than named routes when navigation is stuck
+          Get.offAll(() => const ActiveWorkoutScreen());
+        }
+      });
 
       // Show toast AFTER navigation to ensure it's visible on the workout screen
       Future.delayed(const Duration(milliseconds: 300), () {
@@ -292,8 +648,19 @@ class WorkoutController extends GetxController {
         }
       }
 
-      // Navigate to workout screen
-      Get.toNamed('/active-workout');
+      // Navigate to workout screen using our helper
+      _navigateToActiveWorkout();
+
+      // Add direct fallback navigation after a short delay in case main navigation fails
+      Future.delayed(const Duration(milliseconds: 800), () {
+        if (isWorkoutActive.value && 
+            activeExercises.isNotEmpty &&
+            Get.currentRoute != '/active-workout') {
+          debugPrint('WorkoutController._continueWorkoutInternal(): Main navigation may have failed, using direct fallback');
+          // Get.offAll() is more reliable than named routes when navigation is stuck
+          Get.offAll(() => const ActiveWorkoutScreen());
+        }
+      });
 
       // Show toast AFTER navigation
       Future.delayed(const Duration(milliseconds: 300), () {
@@ -399,7 +766,7 @@ class WorkoutController extends GetxController {
     }
   }
 
-  // Save current workout progress
+  // Save current workout progress with storage updates
   void saveWorkoutProgress() {
     if (!_canPerformAction('saveWorkoutProgress')) return;
 
@@ -427,14 +794,14 @@ class WorkoutController extends GetxController {
       hasIncompleteWorkout.value = true;
       lastExerciseIndex.value = activeExerciseIndex.value;
 
-      // Save completed sets
+      // Save completed sets - the observers will handle storage updates
       savedCompletedSets.clear();
       for (int i = 0; i < activeExercises.length; i++) {
         savedCompletedSets[i] = activeExercises[i].completedSets.value;
       }
 
-      debugPrint(
-          'Saved workout progress: index=${lastExerciseIndex.value}, sets=$savedCompletedSets');
+      // This will be saved via the observer
+      debugPrint('Saved workout progress: index=${lastExerciseIndex.value}, sets=$savedCompletedSets');
 
       // Mark as not active when leaving
       isWorkoutActive.value = false;
@@ -449,12 +816,60 @@ class WorkoutController extends GetxController {
     }
   }
 
-  // Clear saved workout progress
+  // Clear saved workout progress with storage updates
   void _clearSavedWorkoutProgress() {
     debugPrint('Clearing saved workout progress');
     hasIncompleteWorkout.value = false;
     lastExerciseIndex.value = 0;
     savedCompletedSets.clear();
+    
+    // Clear from storage
+    _storage.remove(kHasIncompleteWorkout);
+    _storage.remove(kLastExerciseIndex);
+    _storage.remove(kSavedCompletedSets);
+    _storage.remove(kWorkoutStartTime);
+  }
+
+  // Helper method to update active exercises for a new workout type
+  void _updateActiveExercises(String workoutType) {
+    if (!isWorkoutActive.value) return;
+    
+    // Get exercises for the new workout type
+    final newExercises = WorkoutData.getExercisesForType(workoutType);
+    
+    // If we found exercises, update the active exercises list
+    if (newExercises.isNotEmpty) {
+      debugPrint('Updating active exercises for new workout type: $workoutType');
+      activeExercises.clear();
+      activeExercises.assignAll(newExercises);
+      
+      // Reset exercise index and completed sets
+      activeExerciseIndex.value = 0;
+      for (var exercise in activeExercises) {
+        exercise.completedSets.value = 0;
+      }
+    } else {
+      // Try with normalized workout type as fallback
+      final normalizedWorkoutType = workoutType.toLowerCase();
+      final fallbackExercises = WorkoutData.getExercisesForType(normalizedWorkoutType);
+      
+      if (fallbackExercises.isNotEmpty) {
+        debugPrint('Using fallback exercises with normalized type: $normalizedWorkoutType');
+        activeExercises.clear();
+        activeExercises.assignAll(fallbackExercises);
+        
+        // Reset exercise index and completed sets
+        activeExerciseIndex.value = 0;
+        for (var exercise in activeExercises) {
+          exercise.completedSets.value = 0;
+        }
+      } else {
+        // No exercises found, deactivate workout
+        debugPrint('No exercises found for new workout type: $workoutType');
+        isWorkoutActive.value = false;
+        activeExercises.clear();
+      }
+    }
   }
 
   // Change today's workout type
@@ -476,12 +891,60 @@ class WorkoutController extends GetxController {
 
       // Reset workout status
       resetTodaysWorkoutStatus();
+      
+      // Update active exercises if workout is currently active
+      _updateActiveExercises(newWorkoutType);
 
       StatusToast.showSuccess('Today\'s workout updated to $newWorkoutType');
     } catch (e) {
       StatusToast.showError('Failed to update workout: $e');
     } finally {
       Future.delayed(const Duration(milliseconds: 500), () {
+        isProcessingAction.value = false;
+      });
+    }
+  }
+
+  // Update workout for a specific day
+  void updateWorkoutSchedule(String day, String workoutType) {
+    // Check for day-specific processing
+    if (_dayUpdatesInProgress[day] == true) {
+      return; // Already processing this day
+    }
+
+    // Global processing check
+    if (isProcessingAction.value) {
+      return; // Something else is processing
+    }
+
+    // Set both flags
+    _dayUpdatesInProgress[day] = true;
+    isProcessingAction.value = true;
+
+    try {
+      // Only update if the workout type has actually changed
+      if (workoutSchedule[day] != workoutType) {
+        workoutSchedule[day] = workoutType;
+
+        // If updating today, also update current workout
+        if (day == currentDay.value) {
+          currentWorkout.value = workoutType;
+          isRestDay.value = workoutType.toLowerCase() == 'rest';
+          _silentResetTodaysWorkoutStatus();
+          _clearSavedWorkoutProgress();
+          
+          // Update active exercises if workout is currently active
+          _updateActiveExercises(workoutType);
+        }
+
+        StatusToast.showSuccess('$day updated to $workoutType');
+      }
+    } catch (e) {
+      StatusToast.showError('Failed to update schedule: $e');
+    } finally {
+      // Use a longer delay to ensure UI updates complete
+      Future.delayed(const Duration(milliseconds: 800), () {
+        _dayUpdatesInProgress[day] = false;
         isProcessingAction.value = false;
       });
     }
@@ -514,53 +977,48 @@ class WorkoutController extends GetxController {
     }
   }
 
+  // Reset entire workout schedule to defaults
+  void resetWorkoutSchedule() {
+    if (!_canPerformAction('resetWorkoutSchedule')) return;
+
+    isProcessingAction.value = true;
+
+    try {
+      // Clear the map first to trigger change detection
+      workoutSchedule.clear();
+      
+      // Reset to default schedule
+      workoutSchedule.assignAll(defaultWorkoutSchedule);
+      
+      // Force update by cloning and reassigning 
+      final Map<String, String> updatedSchedule = Map.from(workoutSchedule);
+      workoutSchedule.assignAll(updatedSchedule);
+      
+      // Update today's workout
+      currentWorkout.value = workoutSchedule[currentDay.value] ?? 'Rest';
+      isRestDay.value = currentWorkout.value.toLowerCase() == 'rest';
+
+      // Clear any saved progress
+      _clearSavedWorkoutProgress();
+      
+      // Reset workout status
+      _silentResetTodaysWorkoutStatus();
+      
+      StatusToast.showSuccess('Workout schedule reset to defaults');
+    } catch (e) {
+      StatusToast.showError('Failed to reset workout schedule: $e');
+    } finally {
+      Future.delayed(const Duration(milliseconds: 500), () {
+        isProcessingAction.value = false;
+      });
+    }
+  }
+
   // Silent reset without toast message
   void _silentResetTodaysWorkoutStatus() {
     workoutHistory.removeWhere((entry) => entry.isToday);
     isTodayWorkoutCompleted.value = false;
     isTodayWorkoutSkipped.value = false;
-  }
-
-  // Update workout for a specific day
-  void updateWorkoutSchedule(String day, String workoutType) {
-    // Check for day-specific processing
-    if (_dayUpdatesInProgress[day] == true) {
-      return; // Already processing this day
-    }
-
-    // Global processing check
-    if (isProcessingAction.value) {
-      return; // Something else is processing
-    }
-
-    // Set both flags
-    _dayUpdatesInProgress[day] = true;
-    isProcessingAction.value = true;
-
-    try {
-      // Only update if the workout type has actually changed
-      if (workoutSchedule[day] != workoutType) {
-        workoutSchedule[day] = workoutType;
-
-        // If updating today, also update current workout
-        if (day == currentDay.value) {
-          currentWorkout.value = workoutType;
-          isRestDay.value = workoutType.toLowerCase() == 'rest';
-          _silentResetTodaysWorkoutStatus();
-          _clearSavedWorkoutProgress();
-        }
-
-        StatusToast.showSuccess('$day updated to $workoutType');
-      }
-    } catch (e) {
-      StatusToast.showError('Failed to update schedule: $e');
-    } finally {
-      // Use a longer delay to ensure UI updates complete
-      Future.delayed(const Duration(milliseconds: 800), () {
-        _dayUpdatesInProgress[day] = false;
-        isProcessingAction.value = false;
-      });
-    }
   }
 
   // Record completed set for an exercise
@@ -750,26 +1208,61 @@ class WorkoutController extends GetxController {
 
     isProcessingAction.value = true;
     try {
-      // Clear previous active status
-      isWorkoutActive.value = false;
-      activeExercises.clear();
+      // Validate template
+      if (template.exercises.isEmpty) {
+        debugPrint('WorkoutController.startTemplateWorkout(): Template has no exercises');
+        // Instead of showing error and returning, let's get default exercises
+        final defaultExercises = WorkoutData.getExercisesForType(template.name);
+        
+        if (defaultExercises.isEmpty) {
+          debugPrint('WorkoutController.startTemplateWorkout(): No default exercises available');
+          StatusToast.showError('No exercises available for this workout');
+          isProcessingAction.value = false;
+          return;
+        }
+        
+        debugPrint('WorkoutController.startTemplateWorkout(): Using ${defaultExercises.length} default exercises');
+        activeExercises.assignAll(defaultExercises);
+      } else {
+        // Clear previous active status
+        isWorkoutActive.value = false;
+        activeExercises.clear();
 
-      // Convert template exercises to workout exercises
-      final List<Exercise> exercises = template.exercises
-          .map((e) => Exercise(
-                name: e.name,
-                workoutType: template.type,
-                primaryMuscle:
-                    template.type, // Default primary muscle to template type
-                secondaryMuscles: [], // Empty secondary muscles
-                equipment: 'Unknown', // Default equipment
-                targetSets: e.targetSets,
-                targetReps: e.targetReps,
-                notes: e.notes,
-              ))
-          .toList();
+        // Convert template exercises to workout exercises with validation
+        final List<Exercise> exercises = [];
+        for (var e in template.exercises) {
+          // Ensure target sets and reps are valid
+          final targetSets = e.targetSets > 0 ? e.targetSets : 3;
+          final targetReps = e.targetReps > 0 ? e.targetReps : 10;
+          
+          exercises.add(Exercise(
+            name: e.name,
+            workoutType: template.type,
+            primaryMuscle: template.type, // Default primary muscle to template type
+            secondaryMuscles: [], // Empty secondary muscles
+            equipment: 'Unknown', // Default equipment
+            targetSets: targetSets,
+            targetReps: targetReps,
+            notes: e.notes,
+          ));
+        }
 
-      activeExercises.assignAll(exercises);
+        // Validate converted exercises
+        if (exercises.isEmpty) {
+          debugPrint('WorkoutController.startTemplateWorkout(): Failed to convert template exercises');
+          
+          // Try to get default exercises as fallback
+          final defaultExercises = WorkoutData.getExercisesForType(template.name);
+          if (defaultExercises.isNotEmpty) {
+            debugPrint('WorkoutController.startTemplateWorkout(): Using ${defaultExercises.length} default exercises as fallback');
+            activeExercises.assignAll(defaultExercises);
+          } else {
+            throw Exception('Failed to convert template exercises');
+          }
+        } else {
+          activeExercises.assignAll(exercises);
+        }
+      }
 
       // Set workout type from template name instead of type
       currentWorkout.value = template.name;
@@ -784,15 +1277,27 @@ class WorkoutController extends GetxController {
 
       // Set workout as active
       isWorkoutActive.value = true;
+      debugPrint('WorkoutController: Set workout active to true');
 
       // Reset completed/skipped status (without showing toast)
       _silentResetTodaysWorkoutStatus();
 
-      // Record start time
-      workoutStartTime = DateTime.now();
+      // Record start time with storage
+      _recordWorkoutStartTime();
 
-      // Navigate to workout screen
-      Get.toNamed('/active-workout');
+      // Handle navigation directly here for consistency using the navigation helper
+      _navigateToActiveWorkout();
+
+      // Add direct fallback navigation after a short delay in case main navigation fails
+      Future.delayed(const Duration(milliseconds: 800), () {
+        if (isWorkoutActive.value && 
+            activeExercises.isNotEmpty &&
+            Get.currentRoute != '/active-workout') {
+          debugPrint('WorkoutController.startTemplateWorkout(): Main navigation may have failed, using direct fallback');
+          // Get.offAll() is more reliable than named routes when navigation is stuck
+          Get.offAll(() => const ActiveWorkoutScreen());
+        }
+      });
 
       // Show toast AFTER navigation
       Future.delayed(const Duration(milliseconds: 300), () {
@@ -804,6 +1309,9 @@ class WorkoutController extends GetxController {
 
       // Reset active state if failed
       isWorkoutActive.value = false;
+      
+      // Clear any saved workout progress in case of error
+      _clearSavedWorkoutProgress();
     } finally {
       // Small delay to prevent immediate re-enabling
       Future.delayed(const Duration(milliseconds: 800), () {
@@ -830,7 +1338,7 @@ class WorkoutController extends GetxController {
       activeExercises.assignAll(exercises);
 
       // Set workout type to custom
-      currentWorkout.value = 'Custom';
+      currentWorkout.value = workoutName;
 
       // Reset progress
       activeExerciseIndex.value = 0;
@@ -846,11 +1354,11 @@ class WorkoutController extends GetxController {
       // Reset completed/skipped status (without showing toast)
       _silentResetTodaysWorkoutStatus();
 
-      // Record start time
-      workoutStartTime = DateTime.now();
+      // Record start time with storage
+      _recordWorkoutStartTime();
 
-      // Navigate to workout screen
-      Get.toNamed('/active-workout');
+      // Navigate to workout screen using our helper
+      _navigateToActiveWorkout();
 
       // Show toast AFTER navigation
       Future.delayed(const Duration(milliseconds: 300), () {
@@ -941,5 +1449,64 @@ class WorkoutController extends GetxController {
         ),
       ),
     );
+  }
+
+  // Helper method to get current exercise safely
+  Exercise? getCurrentExercise() {
+    if (activeExercises.isEmpty) return null;
+    
+    final index = activeExerciseIndex.value.clamp(0, activeExercises.length - 1);
+    return activeExercises[index];
+  }
+
+  // Helper method to validate exercise index
+  bool isValidExerciseIndex(int index) {
+    return index >= 0 && index < activeExercises.length;
+  }
+
+  // Move to the next exercise with validation
+  void nextExercise() {
+    if (!_canPerformAction('nextExercise')) return;
+
+    isProcessingAction.value = true;
+    
+    try {
+      // Only advance if not on the last exercise
+      if (activeExerciseIndex.value < activeExercises.length - 1) {
+        activeExerciseIndex.value++;
+      }
+    } catch (e) {
+      debugPrint('Error in nextExercise: $e');
+    } finally {
+      Future.delayed(const Duration(milliseconds: 500), () {
+        isProcessingAction.value = false;
+      });
+    }
+  }
+
+  // Move to the previous exercise with validation
+  void previousExercise() {
+    if (!_canPerformAction('previousExercise')) return;
+
+    isProcessingAction.value = true;
+    
+    try {
+      // Only go back if not on the first exercise
+      if (activeExerciseIndex.value > 0) {
+        activeExerciseIndex.value--;
+      }
+    } catch (e) {
+      debugPrint('Error in previousExercise: $e');
+    } finally {
+      Future.delayed(const Duration(milliseconds: 500), () {
+        isProcessingAction.value = false;
+      });
+    }
+  }
+
+  // Record start time and save to storage
+  void _recordWorkoutStartTime() {
+    workoutStartTime = DateTime.now();
+    _storage.write(kWorkoutStartTime, workoutStartTime!.toIso8601String());
   }
 }

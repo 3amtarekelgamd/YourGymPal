@@ -25,8 +25,8 @@ class DashboardScreen extends StatelessWidget {
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: controller.resetTodaysWorkoutStatus,
-            tooltip: 'Reset Today\'s Status',
+            onPressed: controller.resetWorkoutSchedule,
+            tooltip: 'Reset Workout Schedule',
           ),
         ],
       ),

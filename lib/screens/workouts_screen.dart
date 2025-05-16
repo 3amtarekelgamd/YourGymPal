@@ -210,7 +210,7 @@ class WorkoutsScreen extends GetView<WorkoutsController> {
                     template: template,
                     cardColor: color,
                     onEdit: () => controller.editTemplate(template),
-                    onStart: () => controller.startWorkout(template.id),
+                    onStart: () => controller.directStartWorkout(template.id),
                   ),
                 );
               },
